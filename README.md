@@ -1,7 +1,6 @@
 # open_ai_cli
 
-A simple rust cli app
-
+A simple rust cli app to use Open AI cli.
 
 ## Pre-requisite
 
@@ -26,13 +25,9 @@ Ah, I see you want to know the current folder size in a more human-friendly form
 
 To get the folder size in a human-readable format, simply open your terminal, navigate to the directory you're curious about, and run this command:
 
-```
 du -sh
-```
 
 ```
-
-
 
 
 ## To modify and see whole json response:
