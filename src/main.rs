@@ -6,9 +6,9 @@ use spinners::{Spinner, Spinners};
 use std::env;
 use std::io::{stdin, stdout, Write};
 
-const MAX_TOKENS: u32 = 1000;
+const MAX_TOKENS: u32 = 4096;
 const URL: &str = "https://api.openai.com/v1/chat/completions";
-const MODEL: &str = "gpt-3.5-turbo";
+const MODEL: &str = "gpt-4o";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Message {
