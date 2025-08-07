@@ -327,7 +327,7 @@ async fn show_stats() -> anyhow::Result<()> {
 /// Display session history
 fn display_history(session: &session::Session) {
     println!("\n{}", "Session History:".cyan().bold());
-    println!("{}", "─".repeat(40));
+    println!("{}", "─".repeat(60));
 
     for message in session.history() {
         let role = match message.role {
@@ -337,12 +337,13 @@ fn display_history(session: &session::Session) {
         };
 
         println!("\n{}:", role.bold());
-        // Use the wrapped text display
-        let wrapped = ui::wrap_text(&message.content);
-        println!("{}", wrapped);
+        println!(); // Add space between role and content
+        // Use the new markdown processing for better table display
+        let processed = ui::process_markdown_content(&message.content);
+        println!("{}", processed);
     }
 
-    println!("\n{}", "─".repeat(40));
+    println!("\n{}", "─".repeat(60));
 }
 
 /// Save the current session
