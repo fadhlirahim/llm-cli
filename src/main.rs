@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod error;
 mod session;
+mod streaming_buffer;
 mod ui;
 
 use anyhow::Context;
@@ -12,6 +13,7 @@ use clap::Parser;
 use cli::{Cli, Commands, OutputFormat};
 use colored::Colorize;
 use config::Config;
+use std::io;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -188,28 +190,81 @@ async fn process_chat_message(
     session.add_message(api::Message::user(input));
 
     if stream {
-        // Streaming mode
+        // Streaming mode with table support
+        use crate::streaming_buffer::StreamingBuffer;
+        
         match client.complete_stream(session.history().to_vec()).await {
             Ok(mut stream) => {
                 ui::display_streaming_header();
                 
                 let mut full_response = String::new();
+                let mut buffer = StreamingBuffer::new();
+                let mut needs_indent = true;  // Start with indent for first line
+                let mut table_spinner: Option<indicatif::ProgressBar> = None;
                 
                 while let Some(chunk_result) = stream.next().await {
                     match chunk_result {
                         Ok(chunk) => {
                             if !chunk.is_empty() {
-                                ui::display_streaming_chunk(&chunk);
                                 full_response.push_str(&chunk);
+                                
+                                // Process chunk through buffer for table detection
+                                let (text_output, table_output, is_buffering_table) = buffer.process_chunk(&chunk);
+                                
+                                // Handle table buffering spinner
+                                if is_buffering_table && table_spinner.is_none() {
+                                    // Start spinner for table buffering
+                                    if needs_indent {
+                                        println!(); // New line before spinner
+                                        needs_indent = false;
+                                    }
+                                    let spinner = ui::create_spinner("  Buffering table...");
+                                    table_spinner = Some(spinner);
+                                } else if !is_buffering_table && table_spinner.is_some() {
+                                    // Stop spinner when table buffering is done
+                                    if let Some(spinner) = table_spinner.take() {
+                                        spinner.finish_and_clear();
+                                    }
+                                }
+                                
+                                // Display any immediate text
+                                if !text_output.is_empty() {
+                                    ui::display_streaming_chunk_smart(&text_output, needs_indent);
+                                    // Only reset needs_indent if we're at the start of a new line
+                                    needs_indent = false;  // We've printed something, no more indent until newline
+                                }
+                                
+                                // Display any completed table
+                                if let Some(table) = table_output {
+                                    if needs_indent {
+                                        println!(); // New line before table
+                                        needs_indent = false;
+                                    }
+                                    ui::display_streaming_table(&table);
+                                }
                             }
                         }
                         Err(e) => {
+                            // Clean up spinner if active
+                            if let Some(spinner) = table_spinner.take() {
+                                spinner.finish_and_clear();
+                            }
                             ui::finish_streaming_display();
                             ui::display_error(&e.to_string());
                             session.messages.pop();
                             return Ok(());
                         }
                     }
+                }
+                
+                // Clean up any remaining spinner
+                if let Some(spinner) = table_spinner.take() {
+                    spinner.finish_and_clear();
+                }
+                
+                // Flush any remaining content
+                if let Some(remaining) = buffer.flush() {
+                    ui::display_streaming_chunk_smart(&remaining, needs_indent);
                 }
                 
                 ui::finish_streaming_display();
@@ -264,7 +319,9 @@ async fn run_query_mode(
     let client = api::OpenAIClient::new(config.clone())?;
 
     if stream {
-        // Streaming mode
+        // Streaming mode with table support
+        use crate::streaming_buffer::StreamingBuffer;
+        
         let messages = vec![
             api::Message::system(&config.system_prompt),
             api::Message::user(&message),
@@ -275,19 +332,70 @@ async fn run_query_mode(
                 if matches!(format, OutputFormat::Text) {
                     ui::display_streaming_header();
                     
+                    let mut buffer = StreamingBuffer::new();
+                    let mut needs_indent = true;  // Start with indent for first line
+                    let mut table_spinner: Option<indicatif::ProgressBar> = None;
+                    
                     while let Some(chunk_result) = stream.next().await {
                         match chunk_result {
                             Ok(chunk) => {
                                 if !chunk.is_empty() {
-                                    ui::display_streaming_chunk(&chunk);
+                                    // Process chunk through buffer for table detection
+                                    let (text_output, table_output, is_buffering_table) = buffer.process_chunk(&chunk);
+                                    
+                                    // Handle table buffering spinner
+                                    if is_buffering_table && table_spinner.is_none() {
+                                        // Start spinner for table buffering
+                                        if needs_indent {
+                                            println!(); // New line before spinner
+                                            needs_indent = false;
+                                        }
+                                        let spinner = ui::create_spinner("  Buffering table...");
+                                        table_spinner = Some(spinner);
+                                    } else if !is_buffering_table && table_spinner.is_some() {
+                                        // Stop spinner when table buffering is done
+                                        if let Some(spinner) = table_spinner.take() {
+                                            spinner.finish_and_clear();
+                                        }
+                                    }
+                                    
+                                    // Display any immediate text with proper wrapping
+                                    if !text_output.is_empty() {
+                                        ui::display_streaming_chunk_smart(&text_output, needs_indent);
+                                        // Only reset needs_indent if we're at the start of a new line
+                                        needs_indent = false;  // We've printed something, no more indent until newline
+                                    }
+                                    
+                                    // Display any completed table
+                                    if let Some(table) = table_output {
+                                        if needs_indent {
+                                            println!(); // New line before table
+                                            needs_indent = false;
+                                        }
+                                        ui::display_streaming_table(&table);
+                                    }
                                 }
                             }
                             Err(e) => {
+                                // Clean up spinner if active
+                                if let Some(spinner) = table_spinner.take() {
+                                    spinner.finish_and_clear();
+                                }
                                 ui::finish_streaming_display();
                                 ui::display_error(&e.to_string());
                                 return Ok(());
                             }
                         }
+                    }
+                    
+                    // Clean up any remaining spinner
+                    if let Some(spinner) = table_spinner.take() {
+                        spinner.finish_and_clear();
+                    }
+                    
+                    // Flush any remaining content
+                    if let Some(remaining) = buffer.flush() {
+                        ui::display_streaming_chunk_smart(&remaining, needs_indent);
                     }
                     
                     ui::finish_streaming_display();

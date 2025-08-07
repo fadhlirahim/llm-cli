@@ -492,3 +492,118 @@ mod ui_streaming_tests {
         assert_eq!(result, "Hello 👋 世界 🌍");
     }
 }
+
+#[cfg(test)]
+mod streaming_table_tests {
+    use llm_cli::streaming_buffer::StreamingBuffer;
+    
+    #[test]
+    fn test_streaming_table_detection() {
+        let mut buffer = StreamingBuffer::new();
+        
+        // Simulate streaming a table
+        let chunks = vec![
+            "Here's a comparison table:\n",
+            "\n",
+            "| Feature ",
+            "| Python | Rust |\n",
+            "|---------|--------|------|\n",
+            "| Speed   | Slow   ",
+            "| Fast |\n",
+            "| Memory  | High   | Low  |\n",
+            "\n",
+            "As you can see, Rust is faster.",
+        ];
+        
+        let mut has_table = false;
+        let mut final_text = String::new();
+        
+        for chunk in chunks {
+            let (text, table, _buffering) = buffer.process_chunk(chunk);
+            if !text.is_empty() {
+                final_text.push_str(&text);
+            }
+            if table.is_some() {
+                has_table = true;
+            }
+        }
+        
+        // Flush remaining
+        if let Some(remaining) = buffer.flush() {
+            final_text.push_str(&remaining);
+        }
+        
+        assert!(has_table, "Should have detected and formatted a table");
+        assert!(final_text.contains("comparison table"));
+        assert!(final_text.contains("Rust is faster"));
+    }
+    
+    #[test]
+    fn test_incomplete_table_flush() {
+        let mut buffer = StreamingBuffer::new();
+        
+        // Start a table but don't complete it
+        let (_, _, _) = buffer.process_chunk("| Header 1 | Header 2 |\n");
+        let (_, _, _) = buffer.process_chunk("|----------|----------|\n");
+        let (_, _, _) = buffer.process_chunk("| Data 1   |");
+        
+        // Flush should return the incomplete table
+        let flushed = buffer.flush();
+        assert!(flushed.is_some());
+        let content = flushed.unwrap();
+        assert!(content.contains("Header 1"));
+        assert!(content.contains("Data 1"));
+    }
+    
+    #[test]
+    fn test_mixed_content_streaming() {
+        let mut buffer = StreamingBuffer::new();
+        
+        let chunks = vec![
+            "Regular text before table.\n",
+            "\n| Col A ",
+            "| Col B |\n",
+            "|-------|-------|\n",
+            "| Val 1 | Val 2 |\n",
+            "\nText after table.\n",
+        ];
+        
+        let mut all_text = String::new();
+        let mut table_count = 0;
+        
+        for chunk in chunks {
+            let (text, table, _) = buffer.process_chunk(chunk);
+            all_text.push_str(&text);
+            if table.is_some() {
+                table_count += 1;
+            }
+        }
+        
+        assert_eq!(table_count, 1, "Should have exactly one table");
+        assert!(all_text.contains("Regular text"));
+        assert!(all_text.contains("Text after table"));
+    }
+    
+    #[test]
+    fn test_no_false_positive_tables() {
+        let mut buffer = StreamingBuffer::new();
+        
+        // Text that contains pipes but isn't a table
+        let chunks = vec![
+            "Use the pipe operator | to chain commands.\n",
+            "For example: ls | grep foo\n",
+            "Or: cat file | head -10\n",
+        ];
+        
+        let mut table_found = false;
+        
+        for chunk in chunks {
+            let (_, table, _) = buffer.process_chunk(chunk);
+            if table.is_some() {
+                table_found = true;
+            }
+        }
+        
+        assert!(!table_found, "Should not detect false positive tables");
+    }
+}

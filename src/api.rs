@@ -294,6 +294,11 @@ impl OpenAIClient {
                                 if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
                                     for choice in chunk.choices {
                                         if let Some(delta_content) = choice.delta.content {
+                                            // Debug: Log individual deltas
+                                            if std::env::var("DEBUG_STREAMING").is_ok() {
+                                                eprintln!("[API] Delta content: {:?}", delta_content);
+                                            }
+                                            // Accumulate content without adding extra spaces
                                             content.push_str(&delta_content);
                                         }
                                     }
@@ -301,11 +306,7 @@ impl OpenAIClient {
                             }
                         }
                         
-                        if content.is_empty() {
-                            Ok(String::new())
-                        } else {
-                            Ok(content)
-                        }
+                        Ok(content)
                     }
                     Err(e) => Err(AppError::Network(e.to_string())),
                 }

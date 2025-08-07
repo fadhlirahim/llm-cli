@@ -307,6 +307,47 @@ pub fn display_streaming_chunk(chunk: &str) {
     io::stdout().flush().unwrap();
 }
 
+/// Display a streaming chunk with smart indentation
+pub fn display_streaming_chunk_smart(chunk: &str, needs_indent: bool) {
+    // For streaming, display text exactly as it arrives
+    // No manipulation that could introduce spacing issues
+    
+    if chunk.is_empty() {
+        return;
+    }
+    
+    // Debug: Log what we're about to display
+    if std::env::var("DEBUG_STREAMING").is_ok() {
+        eprintln!("[DISPLAY] About to print: {:?} (needs_indent: {})", chunk, needs_indent);
+    }
+    
+    // Handle initial indentation
+    if needs_indent {
+        print!("  ");
+    }
+    
+    // Print the chunk exactly as received, handling newlines
+    for ch in chunk.chars() {
+        if ch == '\n' {
+            println!();
+            print!("  "); // Indent the next line
+        } else {
+            print!("{}", ch);
+        }
+    }
+    
+    io::stdout().flush().unwrap();
+}
+
+/// Display a formatted table during streaming
+pub fn display_streaming_table(table: &str) {
+    // Tables are already formatted, just add proper indentation
+    for line in table.lines() {
+        println!("  {}", line);
+    }
+    io::stdout().flush().unwrap();
+}
+
 /// Finish streaming display
 pub fn finish_streaming_display() {
     println!(); // Final newline

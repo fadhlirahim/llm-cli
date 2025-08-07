@@ -14,7 +14,7 @@ A modern, universal command-line interface for interacting with Large Language M
 - 🎯 **Multiple Model Support**: Switch between different OpenAI models
 - 🔄 **Async/Await Architecture**: Efficient, non-blocking operations
 - 🛡️ **Comprehensive Error Handling**: Graceful error recovery with detailed messages
-- ⚡ **Streaming Responses**: Real-time streaming of AI responses for better interactivity
+- ⚡ **Streaming Responses**: Real-time streaming of AI responses with intelligent table formatting
 
 ## Installation
 
@@ -362,6 +362,7 @@ cargo build --release
 - Efficient HTTP client with connection pooling
 - Optimized release builds with LTO and single codegen unit
 - Streaming responses for reduced latency and better user experience
+- Smart table detection and formatting during streaming for optimal display
 
 ### Security
 - No unsafe code (`#![forbid(unsafe_code)]`)
