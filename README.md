@@ -1,6 +1,6 @@
 # LLM CLI
 
-A modern, universal command-line interface for interacting with Large Language Models (OpenAI, LM Studio, Ollama, and more), built with Rust and following 2025 best practices.
+A modern, universal command-line interface for interacting with Large Language Models (OpenAI, LM Studio, Ollama, and more), built with Rust.
 
 ## Features
 
