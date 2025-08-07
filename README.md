@@ -360,9 +360,6 @@ Contributions are welcome! Please ensure:
 3. No clippy warnings: `cargo clippy`
 4. Documentation is updated
 
-## License
-
-MIT License - see LICENSE file for details
 
 ## Compatible Services
 
@@ -425,3 +422,8 @@ Built with modern Rust ecosystem tools:
 - `clap` for CLI parsing
 - `serde` for serialization
 - `tracing` for structured logging
+
+
+## License
+
+MIT License - see LICENSE file for details
