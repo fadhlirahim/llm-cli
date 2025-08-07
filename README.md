@@ -299,12 +299,21 @@ src/
 # Run all tests
 cargo test
 
-# Run with coverage
-cargo tarpaulin
+# Run only integration tests (mock API tests)
+cargo test --test integration_tests
+
+# Run only config tests
+cargo test --test config_tests
 
 # Run specific test
 cargo test test_api_client
+
+# Run with code coverage (optional - requires installation)
+# Install: cargo install cargo-tarpaulin
+# Run: cargo tarpaulin
 ```
+
+All tests are properly isolated and can run in parallel without conflicts.
 
 ### Code Quality
 
@@ -407,10 +416,8 @@ llm-cli config --base-url "https://api.together.xyz" \
 
 - [ ] Streaming responses support
 - [ ] Function calling capabilities
-- [ ] Image generation integration
 - [ ] Voice input/output support
 - [ ] Plugin system for extensions
-- [ ] Web UI companion
 - [ ] Batch processing mode
 - [ ] Cost tracking and limits
 

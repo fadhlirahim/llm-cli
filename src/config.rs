@@ -58,7 +58,41 @@ impl Default for Config {
 impl Config {
     /// Load configuration from environment and config file
     pub async fn load() -> Result<Self> {
-        let mut config = Self::load_from_file().await.unwrap_or_default();
+        Self::load_with_file_support(true).await
+    }
+    
+    /// Create a config directly for testing
+    #[doc(hidden)]
+    pub fn test_config() -> Self {
+        Self::default()
+    }
+    
+    /// Create a config with specific values for testing
+    #[doc(hidden)]
+    pub fn test_config_with(
+        api_key: Option<String>,
+        base_url: String,
+        model: String,
+        max_tokens: u32,
+    ) -> Self {
+        Self {
+            api_key,
+            model,
+            max_tokens,
+            base_url,
+            api_path: "/v1/chat/completions".to_string(),
+            system_prompt: "Test prompt".to_string(),
+            timeout_seconds: 30,
+            debug: false,
+        }
+    }
+    
+    async fn load_with_file_support(use_file: bool) -> Result<Self> {
+        let mut config = if use_file {
+            Self::load_from_file().await.unwrap_or_default()
+        } else {
+            Self::default()
+        };
 
         // Override with environment variables
         if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
@@ -149,6 +183,21 @@ impl Config {
     /// Get the full API URL
     pub fn api_url(&self) -> String {
         format!("{}{}", self.base_url.trim_end_matches('/'), self.api_path)
+    }
+    
+    /// Validate config (for testing without env vars)
+    #[doc(hidden)]
+    pub fn validate(&self) -> Result<()> {
+        // Check if using local service
+        let is_local = self.base_url.starts_with("http://localhost") 
+            || self.base_url.starts_with("http://127.0.0.1")
+            || self.base_url.starts_with("http://0.0.0.0");
+        
+        if !is_local && self.api_key.is_none() {
+            return Err(AppError::ApiKeyNotFound);
+        }
+        
+        Ok(())
     }
 }
 
