@@ -4,6 +4,7 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Editor, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
+use textwrap::{wrap, Options};
 
 /// Display a welcome message
 pub fn show_welcome() {
@@ -40,12 +41,44 @@ pub fn get_multiline_input() -> io::Result<String> {
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
 }
 
+/// Get terminal width for proper text wrapping
+fn get_terminal_width() -> usize {
+    terminal_size::terminal_size()
+        .map(|(width, _)| width.0 as usize)
+        .unwrap_or(80) // Default to 80 if we can't detect terminal size
+}
+
+/// Wrap text to fit terminal width
+pub fn wrap_text(text: &str) -> String {
+    let width = get_terminal_width();
+    let options = Options::new(width)
+        .break_words(false) // Don't break words
+        .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit);
+    
+    let lines: Vec<String> = text
+        .lines()
+        .flat_map(|line| {
+            if line.trim().is_empty() {
+                vec![String::new()]
+            } else {
+                wrap(line, &options)
+                    .into_iter()
+                    .map(|cow| cow.to_string())
+                    .collect::<Vec<_>>()
+            }
+        })
+        .collect();
+    
+    lines.join("\n")
+}
+
 /// Display a response
 pub fn display_response(response: &str, format: crate::cli::OutputFormat) {
     match format {
         crate::cli::OutputFormat::Text => {
             println!("\n{}", "Assistant:".green().bold());
-            println!("{}", response);
+            let wrapped = wrap_text(response);
+            println!("{}", wrapped);
         }
         crate::cli::OutputFormat::Json => {
             let json = serde_json::json!({
@@ -56,7 +89,8 @@ pub fn display_response(response: &str, format: crate::cli::OutputFormat) {
         }
         crate::cli::OutputFormat::Markdown => {
             println!("\n{}", "```markdown".dimmed());
-            println!("{}", response);
+            let wrapped = wrap_text(response);
+            println!("{}", wrapped);
             println!("{}", "```".dimmed());
         }
     }
@@ -98,4 +132,10 @@ pub fn show_help() {
     println!("  {}      - Save conversation to file", "save".cyan());
     println!("  {}   - Change the model", "model <name>".cyan());
     println!();
+}
+
+/// Display wrapped error message
+pub fn display_error_wrapped(error: &str) {
+    let wrapped = wrap_text(error);
+    eprintln!("{} {}", "Error:".red().bold(), wrapped);
 }

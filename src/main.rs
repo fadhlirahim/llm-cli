@@ -337,7 +337,9 @@ fn display_history(session: &session::Session) {
         };
 
         println!("\n{}:", role.bold());
-        println!("{}", message.content);
+        // Use the wrapped text display
+        let wrapped = ui::wrap_text(&message.content);
+        println!("{}", wrapped);
     }
 
     println!("\n{}", "─".repeat(40));
