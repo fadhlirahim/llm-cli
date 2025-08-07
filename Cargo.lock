@@ -1008,6 +1008,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "dotenvy",
+ "futures-util",
  "indicatif",
  "insta",
  "pretty_assertions",

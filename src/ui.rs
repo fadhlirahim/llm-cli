@@ -284,3 +284,31 @@ pub fn display_error_wrapped(error: &str) {
     let wrapped = wrap_text(error);
     eprintln!("{} {}", "Error:".red().bold(), wrapped);
 }
+
+/// Display streaming response header
+pub fn display_streaming_header() {
+    println!(); // Add vertical space before response
+    println!("{}", "Assistant:".green().bold());
+    println!(); // Space between label and content
+    print!("  "); // Initial indent for content
+    io::stdout().flush().unwrap();
+}
+
+/// Display a streaming chunk
+pub fn display_streaming_chunk(chunk: &str) {
+    // Handle newlines in chunks properly with indentation
+    for (i, line) in chunk.split('\n').enumerate() {
+        if i > 0 {
+            println!(); // New line
+            print!("  "); // Indent for new line
+        }
+        print!("{}", line);
+    }
+    io::stdout().flush().unwrap();
+}
+
+/// Finish streaming display
+pub fn finish_streaming_display() {
+    println!(); // Final newline
+    println!(); // Add vertical space after response
+}

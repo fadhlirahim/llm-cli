@@ -14,6 +14,7 @@ A modern, universal command-line interface for interacting with Large Language M
 - 🎯 **Multiple Model Support**: Switch between different OpenAI models
 - 🔄 **Async/Await Architecture**: Efficient, non-blocking operations
 - 🛡️ **Comprehensive Error Handling**: Graceful error recovery with detailed messages
+- ⚡ **Streaming Responses**: Real-time streaming of AI responses for better interactivity
 
 ## Installation
 
@@ -218,6 +219,12 @@ Enable multiline input:
 llm-cli chat --multiline
 ```
 
+Enable streaming responses for real-time output:
+
+```bash
+llm-cli chat --stream
+```
+
 ### Single Query Mode
 
 Get a quick response:
@@ -230,6 +237,12 @@ With JSON output:
 
 ```bash
 llm-cli query "List 3 programming languages" --format json
+```
+
+With streaming enabled:
+
+```bash
+llm-cli query "Explain quantum computing" --stream
 ```
 
 ### Configuration Management
@@ -348,6 +361,7 @@ cargo build --release
 - Async/await for non-blocking I/O
 - Efficient HTTP client with connection pooling
 - Optimized release builds with LTO and single codegen unit
+- Streaming responses for reduced latency and better user experience
 
 ### Security
 - No unsafe code (`#![forbid(unsafe_code)]`)
@@ -414,7 +428,7 @@ llm-cli config --base-url "https://api.together.xyz" \
 
 ## Roadmap
 
-- [ ] Streaming responses support
+- [x] Streaming responses support
 - [ ] Function calling capabilities
 - [ ] Voice input/output support
 - [ ] Plugin system for extensions

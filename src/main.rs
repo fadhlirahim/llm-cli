@@ -40,8 +40,8 @@ async fn main() -> anyhow::Result<()> {
         None | Some(Commands::Chat { .. }) => {
             run_chat_mode(config, cli.command).await?;
         }
-        Some(Commands::Query { message, format }) => {
-            run_query_mode(config, message, format).await?;
+        Some(Commands::Query { message, format, stream }) => {
+            run_query_mode(config, message, format, stream).await?;
         }
         Some(Commands::Config {
             show,
@@ -92,6 +92,14 @@ async fn run_chat_mode(config: Config, command: Option<Commands>) -> anyhow::Res
             ..
         })
     );
+    
+    let stream = matches!(
+        command,
+        Some(Commands::Chat {
+            stream: true,
+            ..
+        })
+    );
 
     let initial_message = match command {
         Some(Commands::Chat {
@@ -112,7 +120,7 @@ async fn run_chat_mode(config: Config, command: Option<Commands>) -> anyhow::Res
 
     // Process initial message if provided
     if let Some(message) = initial_message {
-        process_chat_message(&client, session, &message).await?;
+        process_chat_message(&client, session, &message, stream).await?;
     }
 
     // Main chat loop
@@ -161,7 +169,7 @@ async fn run_chat_mode(config: Config, command: Option<Commands>) -> anyhow::Res
             continue;
         }
 
-        process_chat_message(&client, session, input).await?;
+        process_chat_message(&client, session, input, stream).await?;
     }
 
     Ok(())
@@ -172,30 +180,72 @@ async fn process_chat_message(
     client: &api::OpenAIClient,
     session: &mut session::Session,
     input: &str,
+    stream: bool,
 ) -> anyhow::Result<()> {
+    use futures_util::StreamExt;
+    
     // Add user message to session
     session.add_message(api::Message::user(input));
 
-    // Show spinner
-    let spinner = ui::create_spinner("Thinking...");
-
-    // Get response
-    match client.complete(session.history().to_vec()).await {
-        Ok(response) => {
-            spinner.finish_and_clear();
-
-            // Add assistant message to session
-            session.add_message(api::Message::assistant(&response));
-
-            // Display response
-            ui::display_response(&response, OutputFormat::Text);
+    if stream {
+        // Streaming mode
+        match client.complete_stream(session.history().to_vec()).await {
+            Ok(mut stream) => {
+                ui::display_streaming_header();
+                
+                let mut full_response = String::new();
+                
+                while let Some(chunk_result) = stream.next().await {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            if !chunk.is_empty() {
+                                ui::display_streaming_chunk(&chunk);
+                                full_response.push_str(&chunk);
+                            }
+                        }
+                        Err(e) => {
+                            ui::finish_streaming_display();
+                            ui::display_error(&e.to_string());
+                            session.messages.pop();
+                            return Ok(());
+                        }
+                    }
+                }
+                
+                ui::finish_streaming_display();
+                
+                // Add assistant message to session
+                session.add_message(api::Message::assistant(&full_response));
+            }
+            Err(e) => {
+                ui::display_error(&e.to_string());
+                // Remove the user message if the request failed
+                session.messages.pop();
+            }
         }
-        Err(e) => {
-            spinner.finish_and_clear();
-            ui::display_error(&e.to_string());
+    } else {
+        // Non-streaming mode
+        // Show spinner
+        let spinner = ui::create_spinner("Thinking...");
 
-            // Remove the user message if the request failed
-            session.messages.pop();
+        // Get response
+        match client.complete(session.history().to_vec()).await {
+            Ok(response) => {
+                spinner.finish_and_clear();
+
+                // Add assistant message to session
+                session.add_message(api::Message::assistant(&response));
+
+                // Display response
+                ui::display_response(&response, OutputFormat::Text);
+            }
+            Err(e) => {
+                spinner.finish_and_clear();
+                ui::display_error(&e.to_string());
+
+                // Remove the user message if the request failed
+                session.messages.pop();
+            }
         }
     }
 
@@ -207,19 +257,76 @@ async fn run_query_mode(
     config: Config,
     message: String,
     format: OutputFormat,
+    stream: bool,
 ) -> anyhow::Result<()> {
-    let client = api::OpenAIClient::new(config)?;
+    use futures_util::StreamExt;
+    
+    let client = api::OpenAIClient::new(config.clone())?;
 
-    let spinner = ui::create_spinner("Processing query...");
-
-    match client.chat(&message).await {
-        Ok(response) => {
-            spinner.finish_and_clear();
-            ui::display_response(&response, format);
+    if stream {
+        // Streaming mode
+        let messages = vec![
+            api::Message::system(&config.system_prompt),
+            api::Message::user(&message),
+        ];
+        
+        match client.complete_stream(messages).await {
+            Ok(mut stream) => {
+                if matches!(format, OutputFormat::Text) {
+                    ui::display_streaming_header();
+                    
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                if !chunk.is_empty() {
+                                    ui::display_streaming_chunk(&chunk);
+                                }
+                            }
+                            Err(e) => {
+                                ui::finish_streaming_display();
+                                ui::display_error(&e.to_string());
+                                return Ok(());
+                            }
+                        }
+                    }
+                    
+                    ui::finish_streaming_display();
+                } else {
+                    // For non-text formats, collect the full response first
+                    let mut full_response = String::new();
+                    
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                full_response.push_str(&chunk);
+                            }
+                            Err(e) => {
+                                ui::display_error(&e.to_string());
+                                return Ok(());
+                            }
+                        }
+                    }
+                    
+                    ui::display_response(&full_response, format);
+                }
+            }
+            Err(e) => {
+                ui::display_error(&e.to_string());
+            }
         }
-        Err(e) => {
-            spinner.finish_and_clear();
-            ui::display_error(&e.to_string());
+    } else {
+        // Non-streaming mode
+        let spinner = ui::create_spinner("Processing query...");
+
+        match client.chat(&message).await {
+            Ok(response) => {
+                spinner.finish_and_clear();
+                ui::display_response(&response, format);
+            }
+            Err(e) => {
+                spinner.finish_and_clear();
+                ui::display_error(&e.to_string());
+            }
         }
     }
 

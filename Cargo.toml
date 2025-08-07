@@ -18,6 +18,7 @@ path = "src/main.rs"
 # HTTP client - using reqwest for better ergonomics and features
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "io-std", "io-util"] }
+futures-util = "0.3"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

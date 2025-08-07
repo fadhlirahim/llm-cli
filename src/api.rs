@@ -2,8 +2,10 @@
 
 use crate::config::Config;
 use crate::error::{AppError, Result};
+use futures_util::{Stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use std::time::Duration;
 use tracing::{debug, instrument};
 
@@ -90,6 +92,31 @@ pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+}
+
+/// Streaming response chunk from OpenAI API
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StreamChunk {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<StreamChoice>,
+}
+
+/// Choice in a streaming response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StreamChoice {
+    pub index: usize,
+    pub delta: Delta,
+    pub finish_reason: Option<String>,
+}
+
+/// Delta content in streaming response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Delta {
+    pub role: Option<String>,
+    pub content: Option<String>,
 }
 
 /// OpenAI API error response
@@ -195,6 +222,96 @@ impl OpenAIClient {
         ];
 
         self.complete(messages).await
+    }
+    
+    /// Send a streaming completion request
+    #[instrument(skip(self, messages))]
+    pub async fn complete_stream(
+        &self,
+        messages: Vec<Message>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+        let request = CompletionRequest {
+            model: self.config.model.clone(),
+            messages,
+            max_tokens: self.config.max_tokens,
+            temperature: 0.7,
+            stream: true,
+        };
+
+        debug!("Sending streaming completion request");
+
+        let response = self
+            .client
+            .post(&self.config.api_url())
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.api_key()?),
+            )
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let error_text = response.text().await?;
+
+            // Try to parse as error response
+            if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&error_text) {
+                return match error_response.error.code.as_deref() {
+                    Some("rate_limit_exceeded") => Err(AppError::RateLimitExceeded),
+                    _ => Err(AppError::ApiError {
+                        message: error_response.error.message,
+                    }),
+                };
+            }
+
+            return Err(AppError::ApiError {
+                message: format!("API request failed with status {}: {}", status, error_text),
+            });
+        }
+
+        let stream = response.bytes_stream();
+        
+        // Convert the bytes stream to a stream of parsed chunks
+        let chunk_stream = stream
+            .map(move |chunk| {
+                match chunk {
+                    Ok(bytes) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        
+                        // Parse SSE format
+                        let mut content = String::new();
+                        for line in text.lines() {
+                            if line.starts_with("data: ") {
+                                let data = line.strip_prefix("data: ").unwrap_or("");
+                                
+                                if data == "[DONE]" {
+                                    continue;
+                                }
+                                
+                                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                                    for choice in chunk.choices {
+                                        if let Some(delta_content) = choice.delta.content {
+                                            content.push_str(&delta_content);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if content.is_empty() {
+                            Ok(String::new())
+                        } else {
+                            Ok(content)
+                        }
+                    }
+                    Err(e) => Err(AppError::Network(e.to_string())),
+                }
+            });
+
+        Ok(Box::pin(chunk_stream))
     }
     
     /// List available models from the API

@@ -39,6 +39,10 @@ pub enum Commands {
         /// Enable multiline input mode
         #[arg(short, long)]
         multiline: bool,
+        
+        /// Enable streaming responses
+        #[arg(short, long)]
+        stream: bool,
     },
 
     /// Send a single query and get a response
@@ -49,6 +53,10 @@ pub enum Commands {
         /// Output format (text, json, markdown)
         #[arg(short, long, default_value = "text")]
         format: OutputFormat,
+        
+        /// Enable streaming responses
+        #[arg(short, long)]
+        stream: bool,
     },
 
     /// Configure the CLI

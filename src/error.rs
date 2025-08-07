@@ -31,6 +31,9 @@ pub enum AppError {
 
     #[error("Response truncated: exceeded maximum token limit")]
     TokenLimitExceeded,
+    
+    #[error("Network error: {0}")]
+    Network(String),
 }
 
 /// Result type alias for the application
