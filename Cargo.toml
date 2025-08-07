@@ -1,15 +1,79 @@
 [package]
-name = "open_ai_cli"
-version = "0.1.0"
+name = "llm_cli"
+version = "0.2.0"
 edition = "2021"
+rust-version = "1.75"
+authors = ["Fadhli Rahim<e8mhgmngq7@privaterelay.appleid.com>"]
+description = "A modern CLI for interacting with LLMs (OpenAI, LM Studio, etc.)"
+license = "MIT"
+repository = "https://github.com/fadhlirahim/llm-cli"
+keywords = ["openai", "llm", "cli", "ai", "chat"]
+categories = ["command-line-utilities", "api-bindings"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "llm-cli"
+path = "src/main.rs"
+
 [dependencies]
-hyper = { version = "0.14", features = ["full"] }
-hyper-tls = "^0.5"
-tokio = { version = "1.0", features = ["full"] }
-serde = "^1"
-serde_derive = "^1"
-serde_json = "^1"
-spinners = "^2"
+# HTTP client - using reqwest for better ergonomics and features
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "io-std", "io-util"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI and UI
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+indicatif = "0.17"
+colored = "2.1"
+dialoguer = "0.11"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Configuration and environment
+dotenvy = "0.15"
+dirs = "5.0"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Additional utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio-test = "0.4"
+pretty_assertions = "1.4"
+insta = "1.41"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unimplemented = "warn"
+todo = "warn"
+multiple_crate_versions = "allow"
 
