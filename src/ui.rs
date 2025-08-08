@@ -12,6 +12,7 @@ use tabled::{
     builder::Builder,
     settings::{Style, Width, object::Rows, Modify, Alignment},
 };
+use termimad::{MadSkin, FmtText, minimad::TextTemplate};
 use textwrap::{wrap, Options};
 
 /// Display a welcome message
@@ -208,7 +209,53 @@ pub fn highlight_code_block(code: &str, language: &str) -> String {
     highlighted
 }
 
-/// Process text and render any markdown tables and code blocks
+/// Create a termimad skin for markdown rendering
+fn create_markdown_skin() -> MadSkin {
+    let mut skin = MadSkin::default();
+    
+    // Customize the skin for better terminal display
+    skin.set_headers_fg(termimad::crossterm::style::Color::Cyan);
+    skin.bold.set_fg(termimad::crossterm::style::Color::Yellow);
+    skin.italic.set_fg(termimad::crossterm::style::Color::Magenta);
+    skin.strikeout.add_attr(termimad::crossterm::style::Attribute::CrossedOut);
+    skin.inline_code.set_fg(termimad::crossterm::style::Color::Green);
+    skin.quote_mark.set_fg(termimad::crossterm::style::Color::DarkGrey);
+    
+    skin
+}
+
+/// Process a single line of markdown for streaming output
+pub fn process_markdown_line(line: &str) -> String {
+    // Quick check for lines that don't need processing
+    if line.trim().is_empty() {
+        return "\n".to_string();
+    }
+    
+    // Check if this is a list item (bullet or numbered)
+    let trimmed = line.trim();
+    let is_list_item = trimmed.starts_with("- ") || 
+                       trimmed.starts_with("* ") ||
+                       trimmed.starts_with("+ ") ||
+                       trimmed.chars().next().map_or(false, |c| c.is_ascii_digit() && 
+                           trimmed.chars().nth(1).map_or(false, |c2| c2 == '.'));
+    
+    // Use termimad to process the line
+    let skin = create_markdown_skin();
+    let terminal_width = get_terminal_width();
+    let rendered = FmtText::from(&skin, line, Some(terminal_width));
+    
+    // Add indentation and return with newline
+    let output = rendered.to_string();
+    if output.is_empty() {
+        "\n".to_string()
+    } else {
+        // Always add newline for proper line separation
+        format!("  {}\n", output)
+    }
+}
+
+/// Process text and render markdown with hybrid approach
+/// Uses termimad for general markdown, syntect for code blocks, and tabled for tables
 pub fn process_markdown_content(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut result = Vec::new();
@@ -238,10 +285,11 @@ pub fn process_markdown_content(text: &str) -> String {
                 j += 1;
             }
             
-            // Join the code lines and highlight them
+            // Join the code lines and highlight them with syntect
             let code = code_lines.join("\n");
             if !code.trim().is_empty() {
                 let lang = if language.is_empty() { "text" } else { &language };
+                // Use our syntect-based highlighter for code blocks
                 result.push(highlight_code_block(&code, lang));
             }
             
@@ -260,21 +308,48 @@ pub fn process_markdown_content(text: &str) -> String {
                 j += 1;
             }
             
-            // Try to parse and render the table
+            // Try to parse and render the table with tabled
             if let Some(table_data) = parse_markdown_table(&table_lines) {
+                // Use our tabled-based renderer for tables
                 result.push(render_table(table_data));
                 i = j;
                 continue;
             }
         }
         
-        // Not a table or code block, wrap normally
-        if lines[i].trim().is_empty() {
-            result.push(String::new());
-        } else {
-            result.push(wrap_text(lines[i]));
+        // Collect consecutive non-table, non-code lines for termimad processing
+        let mut markdown_lines = Vec::new();
+        while i < lines.len() 
+            && !lines[i].trim().starts_with("```") 
+            && !is_table_row(lines[i]) {
+            markdown_lines.push(lines[i]);
+            i += 1;
         }
-        i += 1;
+        
+        // Process these lines with termimad for general markdown rendering
+        if !markdown_lines.is_empty() {
+            let markdown_text = markdown_lines.join("\n");
+            let skin = create_markdown_skin();
+            
+            // Render with termimad and add proper indentation
+            let terminal_width = get_terminal_width();
+            let rendered = FmtText::from(&skin, &markdown_text, Some(terminal_width));
+            
+            // Add indentation to match our style
+            let indented: String = rendered.to_string()
+                .lines()
+                .map(|line| {
+                    if line.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  {}", line)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            
+            result.push(indented);
+        }
     }
     
     result.join("\n")

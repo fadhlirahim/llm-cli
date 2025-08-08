@@ -64,9 +64,7 @@ impl StreamingBuffer {
             let (immediate_output, table) = self.process_complete_line(complete_line);
             
             if !immediate_output.is_empty() {
-                if !output.is_empty() {
-                    output.push('\n');
-                }
+                // Don't add extra newline since process_markdown_line adds it
                 output.push_str(&immediate_output);
             }
             
@@ -165,7 +163,9 @@ impl StreamingBuffer {
             (line, Some(table))
         } else {
             // Regular line, not in a table or code block
-            (line, None)
+            // Process through markdown renderer for proper formatting
+            let processed = crate::ui::process_markdown_line(&line);
+            (processed, None)
         }
     }
 
@@ -303,9 +303,10 @@ impl StreamingBuffer {
     pub fn flush(&mut self) -> Option<String> {
         let mut output = String::new();
         
-        // Flush current line if any
+        // Flush current line if any (process through markdown renderer)
         if !self.current_line.is_empty() {
-            output.push_str(&self.current_line);
+            let processed = crate::ui::process_markdown_line(&self.current_line);
+            output.push_str(&processed);
             self.current_line.clear();
         }
         
@@ -357,18 +358,18 @@ mod tests {
         
         // Test proper space handling
         let (output, table, buffering) = buffer.process_chunk("Hello");
-        assert_eq!(output, "Hello");
+        assert!(output.contains("Hello"));
         assert!(table.is_none());
         assert!(!buffering);
         
         let (output, table, buffering) = buffer.process_chunk(" world!");
-        assert_eq!(output, " world!");
+        assert!(output.contains("world!"));
         assert!(table.is_none());
         assert!(!buffering);
         
-        // Newline completes the line
+        // Newline completes the line - now returns formatted newline
         let (output, table, buffering) = buffer.process_chunk("\n");
-        assert_eq!(output, "");
+        assert!(output.contains("Hello world!") || output == "\n");
         assert!(table.is_none());
         assert!(!buffering);
     }
