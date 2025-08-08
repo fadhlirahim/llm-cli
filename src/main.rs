@@ -13,7 +13,7 @@ use clap::Parser;
 use cli::{Cli, Commands, OutputFormat};
 use colored::Colorize;
 use config::Config;
-use std::io;
+use std::io::{self, Write};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -208,19 +208,19 @@ async fn process_chat_message(
                             if !chunk.is_empty() {
                                 full_response.push_str(&chunk);
                                 
-                                // Process chunk through buffer for table detection
-                                let (text_output, table_output, is_buffering_table) = buffer.process_chunk(&chunk);
+                                // Process chunk through buffer for table/code block detection
+                                let (text_output, special_output, is_buffering) = buffer.process_chunk(&chunk);
                                 
-                                // Handle table buffering spinner
-                                if is_buffering_table && table_spinner.is_none() {
-                                    // Start spinner for table buffering
+                                // Don't show spinner for code blocks, only for tables
+                                if is_buffering && buffer.is_buffering_table() && table_spinner.is_none() {
+                                    // Start spinner for table buffering only
                                     if needs_indent {
                                         println!(); // New line before spinner
                                         needs_indent = false;
                                     }
                                     let spinner = ui::create_spinner("  Buffering table...");
                                     table_spinner = Some(spinner);
-                                } else if !is_buffering_table && table_spinner.is_some() {
+                                } else if !buffer.is_buffering_table() && table_spinner.is_some() {
                                     // Stop spinner when table buffering is done
                                     if let Some(spinner) = table_spinner.take() {
                                         spinner.finish_and_clear();
@@ -234,13 +234,15 @@ async fn process_chat_message(
                                     needs_indent = false;  // We've printed something, no more indent until newline
                                 }
                                 
-                                // Display any completed table
-                                if let Some(table) = table_output {
+                                // Display any completed special content (table or code block)
+                                if let Some(special) = special_output {
                                     if needs_indent {
-                                        println!(); // New line before table
+                                        println!(); // New line before special content
                                         needs_indent = false;
                                     }
-                                    ui::display_streaming_table(&table);
+                                    // Just print the formatted content directly
+                                    print!("{}", special);
+                                    std::io::Write::flush(&mut std::io::stdout()).unwrap();
                                 }
                             }
                         }
@@ -262,9 +264,12 @@ async fn process_chat_message(
                     spinner.finish_and_clear();
                 }
                 
-                // Flush any remaining content
+                // Flush any remaining content (could be formatted code block or table)
                 if let Some(remaining) = buffer.flush() {
-                    ui::display_streaming_chunk_smart(&remaining, needs_indent);
+                    // The flush might return formatted content (code blocks/tables)
+                    // so we print it directly instead of passing through chunk display
+                    print!("{}", remaining);
+                    io::stdout().flush().unwrap();
                 }
                 
                 ui::finish_streaming_display();

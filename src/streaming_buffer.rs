@@ -1,6 +1,6 @@
-//! Streaming buffer for handling markdown content with tables
+//! Streaming buffer for handling markdown content with tables and code blocks
 
-/// Buffer for streaming content that can detect and format tables
+/// Buffer for streaming content that can detect and format tables and code blocks
 pub struct StreamingBuffer {
     /// Current incomplete line being built from chunks
     current_line: String,
@@ -8,6 +8,12 @@ pub struct StreamingBuffer {
     in_table: bool,
     /// Buffer for table lines while building
     table_buffer: Vec<String>,
+    /// Whether we're currently inside a code block
+    in_code_block: bool,
+    /// Language of the current code block
+    code_block_language: String,
+    /// Buffer for code block content
+    code_block_buffer: Vec<String>,
     /// Buffer for accumulating content until we have something meaningful to display
     display_buffer: String,
 }
@@ -19,12 +25,15 @@ impl StreamingBuffer {
             current_line: String::new(),
             in_table: false,
             table_buffer: Vec::new(),
+            in_code_block: false,
+            code_block_language: String::new(),
+            code_block_buffer: Vec::new(),
             display_buffer: String::new(),
         }
     }
 
     /// Process a chunk of streaming text
-    /// Returns (text_to_display, formatted_table_if_complete, is_buffering_table)
+    /// Returns (text_to_display, formatted_special_content, is_buffering)
     pub fn process_chunk(&mut self, chunk: &str) -> (String, Option<String>, bool) {
         // Debug: Log what we receive
         if std::env::var("DEBUG_STREAMING").is_ok() {
@@ -67,11 +76,11 @@ impl StreamingBuffer {
         }
 
         // Handle remaining partial content
-        if !self.display_buffer.is_empty() && !self.in_table {
-            // Check if this might be the start of a table
+        if !self.display_buffer.is_empty() && !self.in_table && !self.in_code_block {
+            // Check if this might be the start of a table or code block
             let combined = self.current_line.clone() + &self.display_buffer;
-            if !self.looks_like_table_start(&combined) {
-                // Not a table, output what we have
+            if !self.looks_like_table_start(&combined) && !combined.trim().starts_with("```") {
+                // Not a table or code block, output what we have
                 let mut to_output = String::new();
                 
                 if !self.current_line.is_empty() {
@@ -89,12 +98,12 @@ impl StreamingBuffer {
                     output = to_output;
                 }
             } else {
-                // Might be a table start, keep accumulating
+                // Might be a table or code block start, keep accumulating
                 self.current_line.push_str(&self.display_buffer);
                 self.display_buffer.clear();
             }
-        } else if !self.display_buffer.is_empty() && self.in_table {
-            // Currently buffering a table, accumulate
+        } else if !self.display_buffer.is_empty() && (self.in_table || self.in_code_block) {
+            // Currently buffering a table or code block, accumulate
             self.current_line.push_str(&self.display_buffer);
             self.display_buffer.clear();
         }
@@ -104,13 +113,43 @@ impl StreamingBuffer {
             eprintln!("[BUFFER] Outputting: {:?}", output);
         }
 
-        (output, table_output, self.in_table)
+        (output, table_output, self.in_table || self.in_code_block)
     }
 
     /// Process a complete line
     fn process_complete_line(&mut self, line: String) -> (String, Option<String>) {
-        // Check if this line is a table row
-        if self.is_table_row(&line) {
+        // Check if this is a code block fence
+        if line.trim().starts_with("```") {
+            if !self.in_code_block {
+                // Start of code block
+                self.in_code_block = true;
+                let fence = line.trim();
+                self.code_block_language = fence.strip_prefix("```")
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                self.code_block_buffer.clear();
+                (String::new(), None)
+            } else {
+                // End of code block
+                self.in_code_block = false;
+                let code = self.code_block_buffer.join("\n");
+                let lang = if self.code_block_language.is_empty() { 
+                    "text" 
+                } else { 
+                    &self.code_block_language 
+                };
+                let formatted = crate::ui::highlight_code_block(&code, lang);
+                self.code_block_buffer.clear();
+                self.code_block_language.clear();
+                (String::new(), Some(formatted))
+            }
+        } else if self.in_code_block {
+            // Inside code block, buffer the line
+            self.code_block_buffer.push(line);
+            (String::new(), None)
+        } else if self.is_table_row(&line) {
+            // Check if this line is a table row
             if !self.in_table {
                 // Start buffering table
                 self.in_table = true;
@@ -125,7 +164,7 @@ impl StreamingBuffer {
             let table = self.format_buffered_table();
             (line, Some(table))
         } else {
-            // Regular line, not in a table
+            // Regular line, not in a table or code block
             (line, None)
         }
     }
@@ -255,6 +294,11 @@ impl StreamingBuffer {
         self.in_table
     }
     
+    /// Check if currently buffering content (table or code block)
+    pub fn is_buffering(&self) -> bool {
+        self.in_table || self.in_code_block
+    }
+    
     /// Flush any remaining content
     pub fn flush(&mut self) -> Option<String> {
         let mut output = String::new();
@@ -263,6 +307,22 @@ impl StreamingBuffer {
         if !self.current_line.is_empty() {
             output.push_str(&self.current_line);
             self.current_line.clear();
+        }
+        
+        // Flush code block if any
+        if self.in_code_block && !self.code_block_buffer.is_empty() {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            let code = self.code_block_buffer.join("\n");
+            let lang = if self.code_block_language.is_empty() { 
+                "text" 
+            } else { 
+                &self.code_block_language 
+            };
+            output.push_str(&crate::ui::highlight_code_block(&code, lang));
+            self.code_block_buffer.clear();
+            self.in_code_block = false;
         }
         
         // Flush table buffer if any
@@ -362,6 +422,43 @@ mod tests {
         let (output, table, buffering) = buffer.process_chunk("Text after table\n");
         assert_eq!(output, "Text after table");
         assert!(table.is_some());
+        assert!(!buffering);
+    }
+    
+    #[test]
+    fn test_code_block_streaming() {
+        let mut buffer = StreamingBuffer::new();
+        
+        // Start of code block
+        let (output, special, buffering) = buffer.process_chunk("```rust\n");
+        assert_eq!(output, "");
+        assert!(special.is_none());
+        assert!(buffering);
+        
+        // Code content
+        let (output, special, buffering) = buffer.process_chunk("fn main() {\n");
+        assert_eq!(output, "");
+        assert!(special.is_none());
+        assert!(buffering);
+        
+        let (output, special, buffering) = buffer.process_chunk("    println!(\"Hello\");\n");
+        assert_eq!(output, "");
+        assert!(special.is_none());
+        assert!(buffering);
+        
+        let (output, special, buffering) = buffer.process_chunk("}\n");
+        assert_eq!(output, "");
+        assert!(special.is_none());
+        assert!(buffering);
+        
+        // End of code block
+        let (output, special, buffering) = buffer.process_chunk("```\n");
+        assert_eq!(output, "");
+        assert!(special.is_some());
+        let formatted = special.unwrap();
+        assert!(formatted.contains("rust"));
+        assert!(formatted.contains("main"));  // Just check for 'main', not 'fn main'
+        assert!(formatted.contains("Hello"));
         assert!(!buffering);
     }
 }

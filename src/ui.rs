@@ -4,6 +4,10 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Editor, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 use tabled::{
     builder::Builder,
     settings::{Style, Width, object::Rows, Modify, Alignment},
@@ -171,13 +175,80 @@ fn render_table(table_data: Vec<Vec<String>>) -> String {
     format!("  {}", table.to_string().replace('\n', "\n  "))
 }
 
-/// Process text and render any markdown tables found
+/// Parse and highlight a code block
+pub fn highlight_code_block(code: &str, language: &str) -> String {
+    // Load syntax definitions and themes
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+    
+    // Try to find the syntax for the given language
+    let syntax = ps.find_syntax_by_token(language)
+        .or_else(|| ps.find_syntax_by_extension(language))
+        .unwrap_or_else(|| ps.find_syntax_plain_text());
+    
+    // Use a dark theme that works well in terminals
+    let theme = &ts.themes["base16-ocean.dark"];
+    
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let mut highlighted = String::new();
+    
+    // Add simple language indicator
+    highlighted.push_str(&format!("\n  {} {}\n", "```".dimmed(), language.cyan()));
+    
+    // Highlight each line without box borders
+    for line in LinesWithEndings::from(code) {
+        let ranges = highlighter.highlight_line(line, &ps).unwrap_or_default();
+        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+        highlighted.push_str(&format!("  {}", escaped));
+    }
+    
+    // Add closing fence on its own line
+    highlighted.push_str(&format!("\n  {}\n", "```".dimmed()));
+    
+    highlighted
+}
+
+/// Process text and render any markdown tables and code blocks
 pub fn process_markdown_content(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut result = Vec::new();
     let mut i = 0;
     
     while i < lines.len() {
+        // Check if this line starts a code block
+        if lines[i].trim().starts_with("```") {
+            let fence_line = lines[i].trim();
+            let language = fence_line
+                .strip_prefix("```")
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            
+            // Collect all lines until the closing fence
+            let mut code_lines = Vec::new();
+            let mut j = i + 1;
+            
+            while j < lines.len() && !lines[j].trim().starts_with("```") {
+                code_lines.push(lines[j]);
+                j += 1;
+            }
+            
+            // Skip the closing fence if found
+            if j < lines.len() && lines[j].trim().starts_with("```") {
+                j += 1;
+            }
+            
+            // Join the code lines and highlight them
+            let code = code_lines.join("\n");
+            if !code.trim().is_empty() {
+                let lang = if language.is_empty() { "text" } else { &language };
+                result.push(highlight_code_block(&code, lang));
+            }
+            
+            i = j;
+            continue;
+        }
+        
         // Check if this line starts a table
         if is_table_row(lines[i]) {
             // Collect all consecutive table lines
@@ -197,7 +268,7 @@ pub fn process_markdown_content(text: &str) -> String {
             }
         }
         
-        // Not a table, wrap normally
+        // Not a table or code block, wrap normally
         if lines[i].trim().is_empty() {
             result.push(String::new());
         } else {
@@ -279,31 +350,12 @@ pub fn show_help() {
     println!();
 }
 
-/// Display wrapped error message
-pub fn display_error_wrapped(error: &str) {
-    let wrapped = wrap_text(error);
-    eprintln!("{} {}", "Error:".red().bold(), wrapped);
-}
-
 /// Display streaming response header
 pub fn display_streaming_header() {
     println!(); // Add vertical space before response
     println!("{}", "Assistant:".green().bold());
     println!(); // Space between label and content
     print!("  "); // Initial indent for content
-    io::stdout().flush().unwrap();
-}
-
-/// Display a streaming chunk
-pub fn display_streaming_chunk(chunk: &str) {
-    // Handle newlines in chunks properly with indentation
-    for (i, line) in chunk.split('\n').enumerate() {
-        if i > 0 {
-            println!(); // New line
-            print!("  "); // Indent for new line
-        }
-        print!("{}", line);
-    }
     io::stdout().flush().unwrap();
 }
 

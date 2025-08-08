@@ -87,6 +87,21 @@ impl Config {
         }
     }
     
+    /// Validate config (for testing)
+    #[doc(hidden)]
+    pub fn validate(&self) -> Result<()> {
+        // Check if using local service
+        let is_local = self.base_url.starts_with("http://localhost") 
+            || self.base_url.starts_with("http://127.0.0.1")
+            || self.base_url.starts_with("http://0.0.0.0");
+        
+        if !is_local && self.api_key.is_none() {
+            return Err(AppError::ApiKeyNotFound);
+        }
+        
+        Ok(())
+    }
+    
     async fn load_with_file_support(use_file: bool) -> Result<Self> {
         let mut config = if use_file {
             Self::load_from_file().await.unwrap_or_default()
@@ -185,20 +200,6 @@ impl Config {
         format!("{}{}", self.base_url.trim_end_matches('/'), self.api_path)
     }
     
-    /// Validate config (for testing without env vars)
-    #[doc(hidden)]
-    pub fn validate(&self) -> Result<()> {
-        // Check if using local service
-        let is_local = self.base_url.starts_with("http://localhost") 
-            || self.base_url.starts_with("http://127.0.0.1")
-            || self.base_url.starts_with("http://0.0.0.0");
-        
-        if !is_local && self.api_key.is_none() {
-            return Err(AppError::ApiKeyNotFound);
-        }
-        
-        Ok(())
-    }
 }
 
 fn default_model() -> String {
