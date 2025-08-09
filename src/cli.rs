@@ -39,6 +39,10 @@ pub enum Commands {
         /// Enable multiline input mode
         #[arg(short, long)]
         multiline: bool,
+
+        /// Enable Vim-like input mode
+        #[arg(long)]
+        vim: bool,
         
         /// Enable streaming responses
         #[arg(short, long)]
