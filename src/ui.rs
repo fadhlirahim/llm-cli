@@ -3,6 +3,7 @@
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Editor, Input};
 use indicatif::{ProgressBar, ProgressStyle};
+use rustyline::{error::ReadlineError, Editor as RustylineEditor, DefaultEditor};
 use std::io::{self, Write};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
@@ -12,7 +13,7 @@ use tabled::{
     builder::Builder,
     settings::{Style, Width, object::Rows, Modify, Alignment},
 };
-use termimad::{MadSkin, FmtText, minimad::TextTemplate};
+use termimad::{MadSkin, FmtText};
 use textwrap::{wrap, Options};
 
 /// Display a welcome message
@@ -48,6 +49,28 @@ pub fn get_multiline_input() -> io::Result<String> {
         .edit("")
         .map(|s| s.unwrap_or_default())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+}
+
+/// Get user input with a prompt in Vim mode
+pub fn get_input_vim(prompt: &str) -> io::Result<String> {
+    let config = rustyline::Config::builder()
+        .edit_mode(rustyline::EditMode::Vi)
+        .build();
+
+    let mut rl = DefaultEditor::with_config(config).unwrap();
+
+    match rl.readline(&format!("{prompt}> ")) {
+        Ok(line) => Ok(line),
+        Err(ReadlineError::Interrupted) => {
+            // Ctrl-C
+            Ok(String::from("exit"))
+        }
+        Err(ReadlineError::Eof) => {
+            // Ctrl-D
+            Ok(String::from("exit"))
+        }
+        Err(err) => Err(io::Error::new(io::ErrorKind::Other, err)),
+    }
 }
 
 /// Get terminal width for proper text wrapping with margins
@@ -233,7 +256,7 @@ pub fn process_markdown_line(line: &str) -> String {
     
     // Check if this is a list item (bullet or numbered)
     let trimmed = line.trim();
-    let is_list_item = trimmed.starts_with("- ") || 
+    let _is_list_item = trimmed.starts_with("- ") ||
                        trimmed.starts_with("* ") ||
                        trimmed.starts_with("+ ") ||
                        trimmed.chars().next().map_or(false, |c| c.is_ascii_digit() && 

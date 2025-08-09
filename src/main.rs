@@ -87,27 +87,16 @@ fn init_logging(debug: bool) -> anyhow::Result<()> {
 
 /// Run interactive chat mode
 async fn run_chat_mode(config: Config, command: Option<Commands>) -> anyhow::Result<()> {
-    let multiline = matches!(
-        command,
-        Some(Commands::Chat {
-            multiline: true,
-            ..
-        })
-    );
-    
-    let stream = matches!(
-        command,
-        Some(Commands::Chat {
-            stream: true,
-            ..
-        })
-    );
-
-    let initial_message = match command {
-        Some(Commands::Chat {
-            message: Some(msg), ..
-        }) => Some(msg),
-        _ => None,
+    let (multiline, vim, stream, initial_message) = if let Some(Commands::Chat {
+        multiline,
+        vim,
+        stream,
+        message,
+    }) = command
+    {
+        (multiline, vim, stream, message)
+    } else {
+        (false, false, false, None)
     };
 
     ui::clear_screen();
@@ -129,6 +118,8 @@ async fn run_chat_mode(config: Config, command: Option<Commands>) -> anyhow::Res
     loop {
         let input = if multiline {
             ui::get_multiline_input()?
+        } else if vim {
+            ui::get_input_vim("You")?
         } else {
             ui::get_input("You")?
         };
